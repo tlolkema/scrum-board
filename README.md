@@ -69,3 +69,15 @@ The application uses WebSockets for real-time updates:
 Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License
 
 By Tim Lolkema
+
+---
+
+<div align="center">
+  <p class="text-sm text-gray-500">
+    <a href="#" class="text-blue-600 hover:text-blue-800 underline">
+      📖 View API Specification
+    </a>
+    <br>
+    <em>Click the "API Spec" link in the app footer to see detailed API documentation with examples</em>
+  </p>
+</div>

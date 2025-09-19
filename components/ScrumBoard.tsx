@@ -6,6 +6,7 @@ import { Ticket, BoardState } from "@/lib/types";
 import Column from "./Column";
 import CreateTicketModal from "./CreateTicketModal";
 import TicketDetailModal from "./TicketDetailModal";
+import ApiSpecModal from "./ApiSpecModal";
 
 export default function ScrumBoard() {
   const [boardState, setBoardState] = useState<BoardState>({
@@ -15,6 +16,7 @@ export default function ScrumBoard() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [isApiSpecModalOpen, setIsApiSpecModalOpen] = useState(false);
   const [isConnected, setIsConnected] = useState(true);
 
   // Initialize polling for real-time updates
@@ -211,6 +213,11 @@ export default function ScrumBoard() {
         onDeleteTicket={handleDeleteTicket}
       />
 
+      <ApiSpecModal
+        isOpen={isApiSpecModalOpen}
+        onClose={() => setIsApiSpecModalOpen(false)}
+      />
+
       <div className="mt-8 mb-8 text-center">
         <p className="text-sm text-gray-500">
           By{" "}
@@ -222,6 +229,13 @@ export default function ScrumBoard() {
           >
             Tim Lolkema
           </a>
+          {" • "}
+          <button
+            onClick={() => setIsApiSpecModalOpen(true)}
+            className="text-gray-500 hover:text-gray-700 underline inline-flex items-center gap-1"
+          >
+            API Spec
+          </button>
         </p>
       </div>
     </div>
