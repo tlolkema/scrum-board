@@ -3,7 +3,7 @@
 A collaborative scrum board application built with Next.js, featuring real-time updates via WebSockets and persistent storage using Vercel Blob.
 
 <div align="center">
-  <img src="./public/img/logo.png" alt="Scrum Board" width="600" height="auto" />
+  <img src="./public/img/readme.png" alt="Scrum Board" width="600" height="auto" />
 </div>
 
 ## Features
