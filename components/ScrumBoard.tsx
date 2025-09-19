@@ -41,13 +41,19 @@ export default function ScrumBoard() {
       }
 
       try {
-        console.log(
-          `Attempting SSE connection (attempt ${reconnectAttempts + 1})`
-        );
+        // Only log connection attempts after a few failures
+        if (reconnectAttempts > 1) {
+          console.log(
+            `Attempting SSE connection (attempt ${reconnectAttempts + 1})`
+          );
+        }
         eventSource = new EventSource("/api/ws");
 
         eventSource.onopen = () => {
-          console.log("SSE connection opened successfully");
+          // Only log successful connections after failures
+          if (reconnectAttempts > 0) {
+            console.log("SSE connection restored");
+          }
           setIsConnected(true);
           reconnectAttempts = 0; // Reset attempts on successful connection
         };
@@ -58,12 +64,12 @@ export default function ScrumBoard() {
 
             // Handle ping messages
             if (data.type === "ping") {
-              console.log("Received SSE ping");
+              // Silently handle ping messages
               return;
             }
 
             if (data.type === "connected") {
-              console.log("SSE connection confirmed:", data.connectionId);
+              // Silently handle connection confirmation
               return;
             }
 
@@ -83,7 +89,10 @@ export default function ScrumBoard() {
         };
 
         eventSource.onerror = (error) => {
-          console.error("SSE connection error:", error);
+          // Only log errors after a few attempts to reduce console spam
+          if (reconnectAttempts > 2) {
+            console.warn(`SSE connection error (attempt ${reconnectAttempts + 1}):`, error.type);
+          }
           setIsConnected(false);
 
           // Close the current connection
@@ -99,18 +108,21 @@ export default function ScrumBoard() {
               30000 // Max 30 seconds
             );
 
-            console.log(
-              `SSE reconnection scheduled in ${delay}ms (attempt ${
-                reconnectAttempts + 1
-              }/${maxReconnectAttempts})`
-            );
+            // Only log reconnection attempts after a few failures
+            if (reconnectAttempts > 1) {
+              console.log(
+                `SSE reconnection scheduled in ${delay}ms (attempt ${
+                  reconnectAttempts + 1
+                }/${maxReconnectAttempts})`
+              );
+            }
 
             reconnectTimeout = setTimeout(() => {
               reconnectAttempts++;
               connectToSSE();
             }, delay);
           } else {
-            console.error(
+            console.warn(
               "Max SSE reconnection attempts reached. Falling back to polling."
             );
             // Fall back to polling if SSE fails completely
@@ -263,16 +275,6 @@ export default function ScrumBoard() {
               alt="Scrum Board Logo"
               className="h-60 w-auto mr-4"
             />
-            <div className="flex items-center">
-              <div
-                className={`w-3 h-3 rounded-full mr-2 ${
-                  isConnected ? "bg-green-500" : "bg-red-500"
-                }`}
-              ></div>
-              <span className="text-sm text-gray-600">
-                {isConnected ? "Connected" : "Disconnected"}
-              </span>
-            </div>
           </div>
           <button
             onClick={() => setIsCreateModalOpen(true)}
