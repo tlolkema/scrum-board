@@ -254,7 +254,6 @@ export default function ScrumBoard() {
           setSelectedTicket(null);
         }}
         onUpdateTicket={handleUpdateTicket}
-        onDeleteTicket={handleDeleteTicket}
       />
 
       <ApiSpecModal

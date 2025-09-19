@@ -8,7 +8,6 @@ interface TicketDetailModalProps {
   isOpen: boolean;
   onClose: () => void;
   onUpdateTicket: (id: number, updates: Partial<Ticket>) => Promise<void>;
-  onDeleteTicket: (id: number) => Promise<void>;
 }
 
 export default function TicketDetailModal({
@@ -16,14 +15,12 @@ export default function TicketDetailModal({
   isOpen,
   onClose,
   onUpdateTicket,
-  onDeleteTicket,
 }: TicketDetailModalProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState<"todo" | "in-progress" | "done">("todo");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // Update form when ticket changes
   React.useEffect(() => {
@@ -47,20 +44,6 @@ export default function TicketDetailModal({
       setIsEditing(false);
     } catch (error) {
       console.error("Error updating ticket:", error);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleDelete = async () => {
-    if (!ticket) return;
-
-    setIsSubmitting(true);
-    try {
-      await onDeleteTicket(ticket.id);
-      onClose();
-    } catch (error) {
-      console.error("Error deleting ticket:", error);
     } finally {
       setIsSubmitting(false);
     }
@@ -175,51 +158,13 @@ export default function TicketDetailModal({
               </span>
             </div>
 
-            <div className="flex justify-between pt-4">
-              <div className="flex space-x-3">
-                <button
-                  onClick={() => setIsEditing(true)}
-                  className="btn-primary"
-                >
-                  Edit
-                </button>
-                <button
-                  onClick={() => setShowDeleteConfirm(true)}
-                  className="btn-danger"
-                >
-                  Delete
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {showDeleteConfirm && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-60">
-            <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                Confirm Delete
-              </h3>
-              <p className="text-gray-600 mb-6">
-                Are you sure you want to delete ticket #{ticket.id}? This action
-                cannot be undone.
-              </p>
-              <div className="flex justify-end space-x-3">
-                <button
-                  onClick={() => setShowDeleteConfirm(false)}
-                  className="btn-secondary"
-                  disabled={isSubmitting}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleDelete}
-                  className="btn-danger"
-                  disabled={isSubmitting}
-                >
-                  {isSubmitting ? "Deleting..." : "Delete"}
-                </button>
-              </div>
+            <div className="flex justify-end pt-4">
+              <button
+                onClick={() => setIsEditing(true)}
+                className="btn-primary"
+              >
+                Edit
+              </button>
             </div>
           </div>
         )}
