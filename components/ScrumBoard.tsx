@@ -22,19 +22,50 @@ export default function ScrumBoard() {
   // Initialize Server-Sent Events for real-time updates
   useEffect(() => {
     let eventSource: EventSource | null = null;
+    let reconnectTimeout: NodeJS.Timeout | null = null;
+    let reconnectAttempts = 0;
+    const maxReconnectAttempts = 10;
+    const baseReconnectDelay = 1000; // Start with 1 second
 
     const connectToSSE = () => {
+      // Clear any existing connection
+      if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+      }
+
+      // Clear any pending reconnection
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+        reconnectTimeout = null;
+      }
+
       try {
+        console.log(
+          `Attempting SSE connection (attempt ${reconnectAttempts + 1})`
+        );
         eventSource = new EventSource("/api/ws");
 
         eventSource.onopen = () => {
-          console.log("SSE connection opened");
+          console.log("SSE connection opened successfully");
           setIsConnected(true);
+          reconnectAttempts = 0; // Reset attempts on successful connection
         };
 
         eventSource.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
+
+            // Handle ping messages
+            if (data.type === "ping") {
+              console.log("Received SSE ping");
+              return;
+            }
+
+            if (data.type === "connected") {
+              console.log("SSE connection confirmed:", data.connectionId);
+              return;
+            }
 
             if (data.type === "board-updated") {
               setBoardState(data.data);
@@ -55,13 +86,41 @@ export default function ScrumBoard() {
           console.error("SSE connection error:", error);
           setIsConnected(false);
 
-          // Attempt to reconnect after 3 seconds
-          setTimeout(() => {
-            if (eventSource) {
-              eventSource.close();
-            }
-            connectToSSE();
-          }, 3000);
+          // Close the current connection
+          if (eventSource) {
+            eventSource.close();
+            eventSource = null;
+          }
+
+          // Implement exponential backoff
+          if (reconnectAttempts < maxReconnectAttempts) {
+            const delay = Math.min(
+              baseReconnectDelay * Math.pow(2, reconnectAttempts),
+              30000 // Max 30 seconds
+            );
+
+            console.log(
+              `SSE reconnection scheduled in ${delay}ms (attempt ${
+                reconnectAttempts + 1
+              }/${maxReconnectAttempts})`
+            );
+
+            reconnectTimeout = setTimeout(() => {
+              reconnectAttempts++;
+              connectToSSE();
+            }, delay);
+          } else {
+            console.error(
+              "Max SSE reconnection attempts reached. Falling back to polling."
+            );
+            // Fall back to polling if SSE fails completely
+            const pollInterval = setInterval(() => {
+              loadBoardState();
+            }, 5000); // Poll every 5 seconds as fallback
+
+            // Store interval ID for cleanup
+            (window as any).fallbackPollInterval = pollInterval;
+          }
         };
       } catch (error) {
         console.error("Failed to create SSE connection:", error);
@@ -74,6 +133,13 @@ export default function ScrumBoard() {
     return () => {
       if (eventSource) {
         eventSource.close();
+      }
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+      }
+      if ((window as any).fallbackPollInterval) {
+        clearInterval((window as any).fallbackPollInterval);
+        delete (window as any).fallbackPollInterval;
       }
     };
   }, []);
@@ -280,6 +346,16 @@ export default function ScrumBoard() {
             API Spec
           </button>
         </p>
+        <div className="mt-2 flex items-center justify-center gap-2 text-xs">
+          <div
+            className={`w-2 h-2 rounded-full ${
+              isConnected ? "bg-green-500" : "bg-red-500"
+            }`}
+          ></div>
+          <span className="text-gray-400">
+            {isConnected ? "Real-time connected" : "Connecting..."}
+          </span>
+        </div>
       </div>
     </div>
   );
