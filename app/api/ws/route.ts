@@ -31,7 +31,7 @@ const pingConnections = () => {
     timestamp: now,
   })}\n\n`;
 
-  for (const [controller, connection] of connections) {
+  connections.forEach((connection, controller) => {
     try {
       if (controller.desiredSize !== null) {
         controller.enqueue(new TextEncoder().encode(pingData));
@@ -44,7 +44,7 @@ const pingConnections = () => {
       console.error("Error pinging connection:", error);
       cleanup(controller);
     }
-  }
+  });
 };
 
 // Ping every 30 seconds
@@ -53,13 +53,13 @@ setInterval(pingConnections, 30000);
 // Cleanup dead connections every 60 seconds
 setInterval(() => {
   const now = Date.now();
-  for (const [controller, connection] of connections) {
+  connections.forEach((connection, controller) => {
     if (now - connection.lastPing > 120000) {
       // 2 minutes without ping
       console.log(`Cleaning up dead SSE connection ${connection.id}`);
       cleanup(controller);
     }
-  }
+  });
 }, 60000);
 
 export async function GET(request: NextRequest) {
@@ -128,19 +128,15 @@ export async function GET(request: NextRequest) {
       };
 
       request.signal.addEventListener("abort", cleanupHandler);
-
-      // Also clean up on stream close
-      controller.signal?.addEventListener("abort", cleanupHandler);
     },
 
     cancel() {
       // Handle stream cancellation
-      for (const [controller] of connections) {
+      connections.forEach((connection, controller) => {
         if (controller === this) {
           cleanup(controller);
-          break;
         }
-      }
+      });
     },
   });
 
