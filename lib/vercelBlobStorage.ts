@@ -1,11 +1,14 @@
 import { put, del, list } from "@vercel/blob";
-import { BoardState, Ticket } from "./types";
+import { BoardState, Ticket, WebSocketMessage } from "./types";
+import { eventEmitter } from "@/app/api/ws/route";
 
 const BOARD_STATE_KEY = "scrum-board-state";
 
 export class VercelBlobStorage {
   private static instance: VercelBlobStorage;
   private boardState: BoardState | null = null;
+  private lastCheckTime: number = 0;
+  private cacheTimeout: number = 30000; // 30 seconds cache
 
   private constructor() {}
 
@@ -17,7 +20,10 @@ export class VercelBlobStorage {
   }
 
   async getBoardState(): Promise<BoardState> {
-    if (this.boardState) {
+    const now = Date.now();
+
+    // Use cache if less than 30 seconds old
+    if (this.boardState && now - this.lastCheckTime < this.cacheTimeout) {
       return this.boardState;
     }
 
@@ -29,10 +35,13 @@ export class VercelBlobStorage {
           tickets: [],
           nextId: 1,
         };
+        this.lastCheckTime = now;
         return this.boardState;
       }
 
       const blobs = await list({ prefix: BOARD_STATE_KEY });
+      this.lastCheckTime = now; // Update cache time after successful list() call
+
       if (blobs.blobs.length === 0) {
         // Initialize with empty state
         this.boardState = {
@@ -59,6 +68,7 @@ export class VercelBlobStorage {
         tickets: [],
         nextId: 1,
       };
+      this.lastCheckTime = now;
       return this.boardState;
     }
   }
@@ -103,6 +113,18 @@ export class VercelBlobStorage {
     this.boardState = state;
 
     await this.saveBoardState();
+
+    // Emit WebSocket event
+    eventEmitter.emit("ticket-created", {
+      type: "ticket-created",
+      data: ticket,
+    } as WebSocketMessage);
+
+    eventEmitter.emit("board-updated", {
+      type: "board-updated",
+      data: state,
+    } as WebSocketMessage);
+
     return ticket;
   }
 
@@ -127,6 +149,18 @@ export class VercelBlobStorage {
     this.boardState = state;
 
     await this.saveBoardState();
+
+    // Emit WebSocket event
+    eventEmitter.emit("ticket-updated", {
+      type: "ticket-updated",
+      data: updatedTicket,
+    } as WebSocketMessage);
+
+    eventEmitter.emit("board-updated", {
+      type: "board-updated",
+      data: state,
+    } as WebSocketMessage);
+
     return updatedTicket;
   }
 
@@ -138,10 +172,23 @@ export class VercelBlobStorage {
       return false;
     }
 
+    const deletedTicket = state.tickets[ticketIndex];
     state.tickets.splice(ticketIndex, 1);
     this.boardState = state;
 
     await this.saveBoardState();
+
+    // Emit WebSocket event
+    eventEmitter.emit("ticket-deleted", {
+      type: "ticket-deleted",
+      data: { id: deletedTicket.id },
+    } as WebSocketMessage);
+
+    eventEmitter.emit("board-updated", {
+      type: "board-updated",
+      data: state,
+    } as WebSocketMessage);
+
     return true;
   }
 

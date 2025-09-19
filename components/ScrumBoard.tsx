@@ -19,18 +19,62 @@ export default function ScrumBoard() {
   const [isApiSpecModalOpen, setIsApiSpecModalOpen] = useState(false);
   const [isConnected, setIsConnected] = useState(true);
 
-  // Initialize polling for real-time updates
+  // Initialize Server-Sent Events for real-time updates
   useEffect(() => {
-    // Set up polling every 2 seconds to check for updates
-    const pollInterval = setInterval(() => {
-      loadBoardState();
-    }, 2000);
+    let eventSource: EventSource | null = null;
 
-    // Set connected status to true since we're using polling
-    setIsConnected(true);
+    const connectToSSE = () => {
+      try {
+        eventSource = new EventSource("/api/ws");
+
+        eventSource.onopen = () => {
+          console.log("SSE connection opened");
+          setIsConnected(true);
+        };
+
+        eventSource.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+
+            if (data.type === "board-updated") {
+              setBoardState(data.data);
+            } else if (
+              data.type === "ticket-created" ||
+              data.type === "ticket-updated" ||
+              data.type === "ticket-deleted"
+            ) {
+              // Reload the entire board state to ensure consistency
+              loadBoardState();
+            }
+          } catch (error) {
+            console.error("Error parsing SSE message:", error);
+          }
+        };
+
+        eventSource.onerror = (error) => {
+          console.error("SSE connection error:", error);
+          setIsConnected(false);
+
+          // Attempt to reconnect after 3 seconds
+          setTimeout(() => {
+            if (eventSource) {
+              eventSource.close();
+            }
+            connectToSSE();
+          }, 3000);
+        };
+      } catch (error) {
+        console.error("Failed to create SSE connection:", error);
+        setIsConnected(false);
+      }
+    };
+
+    connectToSSE();
 
     return () => {
-      clearInterval(pollInterval);
+      if (eventSource) {
+        eventSource.close();
+      }
     };
   }, []);
 
