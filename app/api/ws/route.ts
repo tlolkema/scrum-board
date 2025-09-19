@@ -1,8 +1,8 @@
 import { NextRequest } from "next/server";
-import { EventEmitter } from "events";
+import { eventEmitter } from "@/lib/eventEmitter";
 
-// Global event emitter for real-time updates
-const eventEmitter = new EventEmitter();
+// Force dynamic rendering for this route
+export const dynamic = "force-dynamic";
 
 // Store active connections
 const connections = new Set<ReadableStreamDefaultController>();
@@ -51,6 +51,3 @@ export async function GET(request: NextRequest) {
     },
   });
 }
-
-// Export the event emitter so other parts of the app can use it
-export { eventEmitter };

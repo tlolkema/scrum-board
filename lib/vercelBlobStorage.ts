@@ -1,6 +1,6 @@
 import { put, del, list } from "@vercel/blob";
 import { BoardState, Ticket, WebSocketMessage } from "./types";
-import { eventEmitter } from "@/app/api/ws/route";
+import { eventEmitter } from "./eventEmitter";
 
 const BOARD_STATE_KEY = "scrum-board-state";
 
