@@ -12,7 +12,7 @@ A collaborative scrum board application built with Next.js, featuring real-time 
 - **Real-time Collaboration**: Multiple users can work simultaneously with WebSocket updates
 - **Ticket Management**: Create, edit, and delete tickets with full details
 - **Persistent Storage**: All data is stored in Vercel Blob storage
-- **REST API**: Access tickets via `/api/issue-{id}` endpoints
+- **REST API**: Access tickets via `/api/tickets/` endpoints
 - **Responsive Design**: Works on desktop and mobile devices
 
 ## Getting Started
