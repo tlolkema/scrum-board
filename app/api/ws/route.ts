@@ -11,6 +11,8 @@ const connections = new Map<
     id: string;
     lastPing: number;
     isAlive: boolean;
+    pingTimeout: NodeJS.Timeout | null;
+    closeTimeout: NodeJS.Timeout | null;
   }
 >();
 
@@ -18,49 +20,45 @@ const connections = new Map<
 const cleanup = (controller: ReadableStreamDefaultController) => {
   const connection = connections.get(controller);
   if (connection) {
+    if (connection.pingTimeout) {
+      clearTimeout(connection.pingTimeout);
+    }
+    if (connection.closeTimeout) {
+      clearTimeout(connection.closeTimeout);
+    }
     connections.delete(controller);
     console.log(`SSE connection ${connection.id} cleaned up`);
   }
 };
 
-// Ping function to keep connections alive
-const pingConnections = () => {
-  const now = Date.now();
-  const pingData = `data: ${JSON.stringify({
-    type: "ping",
-    timestamp: now,
-  })}\n\n`;
+// Send ping to a specific connection
+const sendPing = (controller: ReadableStreamDefaultController) => {
+  const connection = connections.get(controller);
+  if (!connection) return;
 
-  connections.forEach((connection, controller) => {
-    try {
-      if (controller.desiredSize !== null) {
-        controller.enqueue(new TextEncoder().encode(pingData));
-        connection.lastPing = now;
-        connection.isAlive = true;
-      } else {
-        cleanup(controller);
-      }
-    } catch (error) {
-      console.error("Error pinging connection:", error);
+  try {
+    if (controller.desiredSize !== null) {
+      const now = Date.now();
+      const pingData = `data: ${JSON.stringify({
+        type: "ping",
+        timestamp: now,
+      })}\n\n`;
+      controller.enqueue(new TextEncoder().encode(pingData));
+      connection.lastPing = now;
+      connection.isAlive = true;
+
+      // Schedule next ping (every 20 seconds)
+      connection.pingTimeout = setTimeout(() => {
+        sendPing(controller);
+      }, 20000);
+    } else {
       cleanup(controller);
     }
-  });
+  } catch (error) {
+    console.error("Error pinging connection:", error);
+    cleanup(controller);
+  }
 };
-
-// Ping every 30 seconds
-setInterval(pingConnections, 30000);
-
-// Cleanup dead connections every 60 seconds
-setInterval(() => {
-  const now = Date.now();
-  connections.forEach((connection, controller) => {
-    if (now - connection.lastPing > 120000) {
-      // 2 minutes without ping
-      console.log(`Cleaning up dead SSE connection ${connection.id}`);
-      cleanup(controller);
-    }
-  });
-}, 60000);
 
 export async function GET(request: NextRequest) {
   // Create a readable stream for Server-Sent Events
@@ -75,6 +73,8 @@ export async function GET(request: NextRequest) {
         id: connectionId,
         lastPing: Date.now(),
         isAlive: true,
+        pingTimeout: null,
+        closeTimeout: null,
       });
 
       console.log(`SSE connection ${connectionId} established`);
@@ -92,6 +92,26 @@ export async function GET(request: NextRequest) {
         console.error("Error sending initial message:", error);
         cleanup(controller);
         return;
+      }
+
+      // Start ping cycle (first ping after 20 seconds)
+      const connection = connections.get(controller);
+      if (connection) {
+        connection.pingTimeout = setTimeout(() => {
+          sendPing(controller);
+        }, 20000);
+
+        // Close connection gracefully at 25 seconds to avoid Vercel timeout
+        // The client will automatically reconnect
+        connection.closeTimeout = setTimeout(() => {
+          console.log(`Closing SSE connection ${connectionId} before timeout`);
+          try {
+            controller.close();
+          } catch (error) {
+            // Connection may already be closed
+          }
+          cleanup(controller);
+        }, 25000); // Close at 25 seconds, before 30-second Vercel timeout
       }
 
       // Listen for board updates
