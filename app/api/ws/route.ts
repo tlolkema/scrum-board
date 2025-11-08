@@ -13,6 +13,7 @@ const connections = new Map<
     isAlive: boolean;
     pingTimeout: NodeJS.Timeout | null;
     closeTimeout: NodeJS.Timeout | null;
+    handleUpdate: (data: any) => void;
   }
 >();
 
@@ -20,12 +21,22 @@ const connections = new Map<
 const cleanup = (controller: ReadableStreamDefaultController) => {
   const connection = connections.get(controller);
   if (connection) {
+    // Remove event listeners
+    if (connection.handleUpdate) {
+      eventEmitter.off("board-updated", connection.handleUpdate);
+      eventEmitter.off("ticket-created", connection.handleUpdate);
+      eventEmitter.off("ticket-updated", connection.handleUpdate);
+      eventEmitter.off("ticket-deleted", connection.handleUpdate);
+    }
+    
+    // Clear timeouts
     if (connection.pingTimeout) {
       clearTimeout(connection.pingTimeout);
     }
     if (connection.closeTimeout) {
       clearTimeout(connection.closeTimeout);
     }
+    
     connections.delete(controller);
     console.log(`SSE connection ${connection.id} cleaned up`);
   }
@@ -75,6 +86,7 @@ export async function GET(request: NextRequest) {
         isAlive: true,
         pingTimeout: null,
         closeTimeout: null,
+        handleUpdate: () => {}, // Placeholder, will be set later
       });
 
       console.log(`SSE connection ${connectionId} established`);
@@ -116,7 +128,19 @@ export async function GET(request: NextRequest) {
 
       // Listen for board updates
       const handleUpdate = (data: any) => {
+        // Check if connection still exists and is valid
+        const currentConnection = connections.get(controller);
+        if (!currentConnection) {
+          // Connection was already cleaned up, remove listeners
+          eventEmitter.off("board-updated", handleUpdate);
+          eventEmitter.off("ticket-created", handleUpdate);
+          eventEmitter.off("ticket-updated", handleUpdate);
+          eventEmitter.off("ticket-deleted", handleUpdate);
+          return;
+        }
+
         try {
+          // Check if controller is still valid before enqueueing
           if (controller.desiredSize !== null) {
             const message = `data: ${JSON.stringify({
               ...data,
@@ -127,10 +151,16 @@ export async function GET(request: NextRequest) {
             cleanup(controller);
           }
         } catch (error) {
-          console.error("Error sending update message:", error);
+          // Controller is likely closed, clean up silently
           cleanup(controller);
         }
       };
+
+      // Store the handler in the connection metadata
+      const currentConnection = connections.get(controller);
+      if (currentConnection) {
+        currentConnection.handleUpdate = handleUpdate;
+      }
 
       // Add event listeners
       eventEmitter.on("board-updated", handleUpdate);
@@ -140,10 +170,6 @@ export async function GET(request: NextRequest) {
 
       // Clean up when connection closes
       const cleanupHandler = () => {
-        eventEmitter.off("board-updated", handleUpdate);
-        eventEmitter.off("ticket-created", handleUpdate);
-        eventEmitter.off("ticket-updated", handleUpdate);
-        eventEmitter.off("ticket-deleted", handleUpdate);
         cleanup(controller);
       };
 
