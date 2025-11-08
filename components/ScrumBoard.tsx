@@ -185,10 +185,21 @@ export default function ScrumBoard() {
         throw new Error("Failed to create ticket");
       }
 
-      // Immediately reload the board state to show the new ticket
+      const newTicket: Ticket = await response.json();
+
+      // Optimistically update the UI with the new ticket
+      setBoardState((prevState) => ({
+        ...prevState,
+        tickets: [...prevState.tickets, newTicket],
+        nextId: Math.max(prevState.nextId, newTicket.id + 1),
+      }));
+
+      // Then reload the full board state to ensure consistency
       await loadBoardState();
     } catch (error) {
       console.error("Error creating ticket:", error);
+      // Reload state on error to ensure consistency
+      await loadBoardState();
       throw error;
     }
   };
