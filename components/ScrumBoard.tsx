@@ -74,6 +74,7 @@ export default function ScrumBoard() {
             }
 
             if (data.type === "board-updated") {
+              // Use the board state from the event directly
               setBoardState(data.data);
             } else if (
               data.type === "ticket-created" ||
@@ -81,7 +82,8 @@ export default function ScrumBoard() {
               data.type === "ticket-deleted"
             ) {
               // Reload the entire board state to ensure consistency
-              loadBoardState();
+              // Use force refresh to bypass cache
+              loadBoardState(true);
             }
           } catch (error) {
             console.error("Error parsing SSE message:", error);
@@ -161,9 +163,13 @@ export default function ScrumBoard() {
     loadBoardState();
   }, []);
 
-  const loadBoardState = async () => {
+  const loadBoardState = async (forceRefresh = false) => {
     try {
-      const response = await fetch("/api/tickets");
+      // Add cache-busting query parameter if forcing refresh
+      const url = forceRefresh 
+        ? `/api/tickets?t=${Date.now()}`
+        : "/api/tickets";
+      const response = await fetch(url);
       const data = await response.json();
       setBoardState(data);
     } catch (error) {
@@ -194,12 +200,15 @@ export default function ScrumBoard() {
         nextId: Math.max(prevState.nextId, newTicket.id + 1),
       }));
 
-      // Then reload the full board state to ensure consistency
-      await loadBoardState();
+      // Reload the full board state with cache-busting to ensure we get fresh data
+      // Small delay to allow server to save
+      setTimeout(() => {
+        loadBoardState(true);
+      }, 200);
     } catch (error) {
       console.error("Error creating ticket:", error);
-      // Reload state on error to ensure consistency
-      await loadBoardState();
+      // Reload state on error to ensure consistency (force refresh)
+      await loadBoardState(true);
       throw error;
     }
   };
@@ -218,10 +227,12 @@ export default function ScrumBoard() {
         throw new Error("Failed to update ticket");
       }
 
-      // Immediately reload the board state to show the updated ticket
-      await loadBoardState();
+      // Immediately reload the board state to show the updated ticket (force refresh)
+      await loadBoardState(true);
     } catch (error) {
       console.error("Error updating ticket:", error);
+      // Reload on error to ensure consistency
+      await loadBoardState(true);
       throw error;
     }
   };
@@ -236,10 +247,12 @@ export default function ScrumBoard() {
         throw new Error("Failed to delete ticket");
       }
 
-      // Immediately reload the board state to show the updated ticket list
-      await loadBoardState();
+      // Immediately reload the board state to show the updated ticket list (force refresh)
+      await loadBoardState(true);
     } catch (error) {
       console.error("Error deleting ticket:", error);
+      // Reload on error to ensure consistency
+      await loadBoardState(true);
       throw error;
     }
   };

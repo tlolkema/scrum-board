@@ -4,9 +4,13 @@ import { CreateTicketRequest } from "@/lib/types";
 
 const storage = VercelBlobStorage.getInstance();
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const boardState = await storage.getBoardState();
+    // Check if force refresh is requested via query parameter
+    const { searchParams } = new URL(request.url);
+    const forceRefresh = searchParams.has("t"); // Any query param triggers refresh
+    
+    const boardState = await storage.getBoardState(forceRefresh);
     return NextResponse.json(boardState);
   } catch (error) {
     console.error("Error fetching tickets:", error);

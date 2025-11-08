@@ -19,11 +19,17 @@ export class VercelBlobStorage {
     return VercelBlobStorage.instance;
   }
 
-  async getBoardState(): Promise<BoardState> {
+  // Invalidate cache - useful after mutations
+  invalidateCache(): void {
+    this.boardState = null;
+    this.lastCheckTime = 0;
+  }
+
+  async getBoardState(forceRefresh = false): Promise<BoardState> {
     const now = Date.now();
 
-    // Use cache if less than 30 seconds old
-    if (this.boardState && now - this.lastCheckTime < this.cacheTimeout) {
+    // Use cache if less than 30 seconds old and not forcing refresh
+    if (!forceRefresh && this.boardState && now - this.lastCheckTime < this.cacheTimeout) {
       return this.boardState;
     }
 
@@ -97,7 +103,8 @@ export class VercelBlobStorage {
   }
 
   async createTicket(title: string, description: string): Promise<Ticket> {
-    const state = await this.getBoardState();
+    // Force refresh to get latest state
+    const state = await this.getBoardState(true);
 
     const ticket: Ticket = {
       id: state.nextId,
@@ -111,6 +118,7 @@ export class VercelBlobStorage {
     state.tickets.push(ticket);
     state.nextId++;
     this.boardState = state;
+    this.lastCheckTime = Date.now(); // Update cache time
 
     await this.saveBoardState();
 
@@ -132,7 +140,8 @@ export class VercelBlobStorage {
     id: number,
     updates: Partial<Ticket>
   ): Promise<Ticket | null> {
-    const state = await this.getBoardState();
+    // Force refresh to get latest state
+    const state = await this.getBoardState(true);
     const ticketIndex = state.tickets.findIndex((t) => t.id === id);
 
     if (ticketIndex === -1) {
@@ -147,6 +156,7 @@ export class VercelBlobStorage {
 
     state.tickets[ticketIndex] = updatedTicket;
     this.boardState = state;
+    this.lastCheckTime = Date.now(); // Update cache time
 
     await this.saveBoardState();
 
@@ -165,7 +175,8 @@ export class VercelBlobStorage {
   }
 
   async deleteTicket(id: number): Promise<boolean> {
-    const state = await this.getBoardState();
+    // Force refresh to get latest state
+    const state = await this.getBoardState(true);
     const ticketIndex = state.tickets.findIndex((t) => t.id === id);
 
     if (ticketIndex === -1) {
@@ -175,6 +186,7 @@ export class VercelBlobStorage {
     const deletedTicket = state.tickets[ticketIndex];
     state.tickets.splice(ticketIndex, 1);
     this.boardState = state;
+    this.lastCheckTime = Date.now(); // Update cache time
 
     await this.saveBoardState();
 
