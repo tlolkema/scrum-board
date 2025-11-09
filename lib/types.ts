@@ -10,6 +10,7 @@ export interface Ticket {
 export interface BoardState {
   tickets: Ticket[];
   nextId: number;
+  version: number;
 }
 
 export interface CreateTicketRequest {

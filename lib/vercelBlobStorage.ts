@@ -1,6 +1,6 @@
 import { put, del, list } from "@vercel/blob";
-import { BoardState, Ticket, WebSocketMessage } from "./types";
-import { eventEmitter } from "./eventEmitter";
+import { BoardState, Ticket } from "./types";
+import { versionManager } from "./versionManager";
 
 const BOARD_STATE_KEY = "scrum-board-state";
 
@@ -37,9 +37,11 @@ export class VercelBlobStorage {
       // Check if we have a blob token
       if (!process.env.BLOB_READ_WRITE_TOKEN) {
         console.log("No Vercel Blob token found, using in-memory storage");
+        const version = await versionManager.getVersion();
         this.boardState = {
           tickets: [],
           nextId: 1,
+          version,
         };
         this.lastCheckTime = now;
         return this.boardState;
@@ -50,9 +52,11 @@ export class VercelBlobStorage {
 
       if (blobs.blobs.length === 0) {
         // Initialize with empty state
+        const version = await versionManager.getVersion();
         this.boardState = {
           tickets: [],
           nextId: 1,
+          version,
         };
         await this.saveBoardState();
         return this.boardState;
@@ -65,14 +69,23 @@ export class VercelBlobStorage {
       )[0];
 
       const response = await fetch(latestBlob.url);
-      this.boardState = await response.json();
+      const loadedState = await response.json();
+      
+      // Ensure version is included (for backward compatibility with old data)
+      const currentVersion = await versionManager.getVersion();
+      this.boardState = {
+        ...loadedState,
+        version: loadedState.version ?? currentVersion,
+      };
       return this.boardState!;
     } catch (error) {
       console.error("Error loading board state:", error);
       // Return empty state if loading fails
+      const version = await versionManager.getVersion();
       this.boardState = {
         tickets: [],
         nextId: 1,
+        version,
       };
       this.lastCheckTime = now;
       return this.boardState;
@@ -83,6 +96,10 @@ export class VercelBlobStorage {
     if (!this.boardState) return;
 
     try {
+      // Increment version before saving
+      const newVersion = await versionManager.incrementVersion();
+      this.boardState.version = newVersion;
+
       // Check if we have a blob token
       if (!process.env.BLOB_READ_WRITE_TOKEN) {
         console.log(
@@ -122,17 +139,6 @@ export class VercelBlobStorage {
 
     await this.saveBoardState();
 
-    // Emit WebSocket event
-    eventEmitter.emit("ticket-created", {
-      type: "ticket-created",
-      data: ticket,
-    } as WebSocketMessage);
-
-    eventEmitter.emit("board-updated", {
-      type: "board-updated",
-      data: state,
-    } as WebSocketMessage);
-
     return ticket;
   }
 
@@ -160,17 +166,6 @@ export class VercelBlobStorage {
 
     await this.saveBoardState();
 
-    // Emit WebSocket event
-    eventEmitter.emit("ticket-updated", {
-      type: "ticket-updated",
-      data: updatedTicket,
-    } as WebSocketMessage);
-
-    eventEmitter.emit("board-updated", {
-      type: "board-updated",
-      data: state,
-    } as WebSocketMessage);
-
     return updatedTicket;
   }
 
@@ -189,17 +184,6 @@ export class VercelBlobStorage {
     this.lastCheckTime = Date.now(); // Update cache time
 
     await this.saveBoardState();
-
-    // Emit WebSocket event
-    eventEmitter.emit("ticket-deleted", {
-      type: "ticket-deleted",
-      data: { id: deletedTicket.id },
-    } as WebSocketMessage);
-
-    eventEmitter.emit("board-updated", {
-      type: "board-updated",
-      data: state,
-    } as WebSocketMessage);
 
     return true;
   }

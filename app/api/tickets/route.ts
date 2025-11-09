@@ -1,17 +1,45 @@
 import { NextRequest, NextResponse } from "next/server";
 import { VercelBlobStorage } from "@/lib/vercelBlobStorage";
 import { CreateTicketRequest } from "@/lib/types";
+import { versionManager } from "@/lib/versionManager";
 
 const storage = VercelBlobStorage.getInstance();
 
 export async function GET(request: NextRequest) {
   try {
-    // Check if force refresh is requested via query parameter
     const { searchParams } = new URL(request.url);
+    const clientVersion = searchParams.get("version");
     const forceRefresh = searchParams.has("t"); // Any query param triggers refresh
     
+    // If client provided a version, check if it matches
+    if (clientVersion && !forceRefresh) {
+      const clientVersionNum = parseInt(clientVersion, 10);
+      if (!isNaN(clientVersionNum)) {
+        const versionsMatch = await versionManager.compareVersion(clientVersionNum);
+        if (versionsMatch) {
+          // Versions match - return 304 Not Modified
+          return new NextResponse(null, {
+            status: 304,
+            headers: {
+              "Cache-Control": "no-cache, must-revalidate",
+              "ETag": `"${clientVersionNum}"`,
+            },
+          });
+        }
+      }
+    }
+    
+    // Versions don't match or no version provided - return full state
     const boardState = await storage.getBoardState(forceRefresh);
-    return NextResponse.json(boardState);
+    const serverVersion = boardState.version;
+    
+    return NextResponse.json(boardState, {
+      headers: {
+        "Cache-Control": "no-cache, must-revalidate",
+        "ETag": `"${serverVersion}"`,
+        "Last-Modified": new Date().toUTCString(),
+      },
+    });
   } catch (error) {
     console.error("Error fetching tickets:", error);
     return NextResponse.json(

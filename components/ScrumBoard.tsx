@@ -12,196 +12,91 @@ export default function ScrumBoard() {
   const [boardState, setBoardState] = useState<BoardState>({
     tickets: [],
     nextId: 1,
+    version: 0,
   });
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isApiSpecModalOpen, setIsApiSpecModalOpen] = useState(false);
-  const [isConnected, setIsConnected] = useState(true);
 
-  // Initialize Server-Sent Events for real-time updates
+  // Version-based polling for real-time updates
   useEffect(() => {
-    let eventSource: EventSource | null = null;
-    let reconnectTimeout: NodeJS.Timeout | null = null;
-    let reconnectAttempts = 0;
-    const maxReconnectAttempts = 10;
-    const baseReconnectDelay = 2000; // Start with 2 seconds (increased from 1s)
+    let pollInterval: ReturnType<typeof setInterval> | null = null;
+    let pollTimeout: ReturnType<typeof setTimeout> | null = null;
     let isPageVisible = true;
+    const pollIntervalMs = 20000; // Poll every 20 seconds when idle
 
-    // Pause connections when page is hidden to save compute
+    const pollBoardState = async () => {
+      if (!isPageVisible) {
+        return;
+      }
+
+      const currentVersion = boardState.version;
+      const url = currentVersion
+        ? `/api/tickets?version=${currentVersion}`
+        : "/api/tickets";
+
+      try {
+        const response = await fetch(url);
+        
+        if (response.status === 304) {
+          // No changes - version matches, no update needed
+          return;
+        }
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data: BoardState = await response.json();
+        setBoardState(data);
+      } catch (error) {
+        console.error("Error polling board state:", error);
+      }
+    };
+
+    // Handle page visibility changes
     const handleVisibilityChange = () => {
       isPageVisible = !document.hidden;
-      if (!isPageVisible && eventSource) {
-        // Page hidden - close connection to save resources
-        eventSource.close();
-        eventSource = null;
-        setIsConnected(false);
-        if (reconnectTimeout) {
-          clearTimeout(reconnectTimeout);
-          reconnectTimeout = null;
+      
+      if (isPageVisible) {
+        // Page became visible - poll immediately
+        pollBoardState();
+        // Then continue polling at interval
+        if (pollInterval) {
+          clearInterval(pollInterval);
         }
-      } else if (isPageVisible && !eventSource) {
-        // Page visible - reconnect
-        reconnectAttempts = 0;
-        connectToSSE();
+        pollInterval = setInterval(pollBoardState, pollIntervalMs);
+      } else {
+        // Page hidden - stop polling to save compute
+        if (pollInterval) {
+          clearInterval(pollInterval);
+          pollInterval = null;
+        }
+        if (pollTimeout) {
+          clearTimeout(pollTimeout);
+          pollTimeout = null;
+        }
       }
     };
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
-    const connectToSSE = () => {
-      // Don't connect if page is hidden
-      if (!isPageVisible) {
-        return;
-      }
-
-      // Clear any existing connection
-      if (eventSource) {
-        eventSource.close();
-        eventSource = null;
-      }
-
-      // Clear any pending reconnection
-      if (reconnectTimeout) {
-        clearTimeout(reconnectTimeout);
-        reconnectTimeout = null;
-      }
-
-      try {
-        // Only log connection attempts after a few failures
-        if (reconnectAttempts > 1) {
-          console.log(
-            `Attempting SSE connection (attempt ${reconnectAttempts + 1})`
-          );
-        }
-        eventSource = new EventSource("/api/ws");
-
-        eventSource.onopen = () => {
-          // Only log successful connections after failures
-          if (reconnectAttempts > 0) {
-            console.log("SSE connection restored");
-          }
-          setIsConnected(true);
-          reconnectAttempts = 0; // Reset attempts on successful connection
-        };
-
-        eventSource.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-
-            // Handle ping messages
-            if (data.type === "ping") {
-              // Silently handle ping messages
-              return;
-            }
-
-            if (data.type === "connected") {
-              // Silently handle connection confirmation
-              return;
-            }
-
-            if (data.type === "board-updated") {
-              // Use the board state from the event directly - no need for additional API call
-              setBoardState(data.data);
-            } else if (
-              data.type === "ticket-created" ||
-              data.type === "ticket-updated" ||
-              data.type === "ticket-deleted"
-            ) {
-              // For individual ticket events, we still get board-updated, so we can rely on that
-              // But if we only get ticket events, we should reload (though this shouldn't happen)
-              // Actually, the server sends both ticket-* and board-updated, so we can ignore these
-              // and just wait for board-updated which already updates the state
-            }
-          } catch (error) {
-            console.error("Error parsing SSE message:", error);
-          }
-        };
-
-        eventSource.onerror = (error) => {
-          // Only log errors after a few attempts to reduce console spam
-          if (reconnectAttempts > 2) {
-            console.warn(`SSE connection error (attempt ${reconnectAttempts + 1}):`, error.type);
-          }
-          setIsConnected(false);
-
-          // Close the current connection
-          if (eventSource) {
-            eventSource.close();
-            eventSource = null;
-          }
-
-          // Don't reconnect if page is hidden
-          if (!isPageVisible) {
-            return;
-          }
-
-          // Implement exponential backoff with longer delays to reduce compute
-          if (reconnectAttempts < maxReconnectAttempts) {
-            const delay = Math.min(
-              baseReconnectDelay * Math.pow(2, reconnectAttempts),
-              60000 // Max 60 seconds (increased from 30s)
-            );
-
-            // Only log reconnection attempts after a few failures
-            if (reconnectAttempts > 1) {
-              console.log(
-                `SSE reconnection scheduled in ${delay}ms (attempt ${
-                  reconnectAttempts + 1
-                }/${maxReconnectAttempts})`
-              );
-            }
-
-            reconnectTimeout = setTimeout(() => {
-              if (isPageVisible) {
-                reconnectAttempts++;
-                connectToSSE();
-              }
-            }, delay);
-          } else {
-            console.warn(
-              "Max SSE reconnection attempts reached. Falling back to polling."
-            );
-            // Fall back to polling if SSE fails completely (only when visible)
-            if (isPageVisible) {
-              const pollInterval = setInterval(() => {
-                if (isPageVisible) {
-                  loadBoardState();
-                } else {
-                  clearInterval(pollInterval);
-                }
-              }, 10000); // Poll every 10 seconds as fallback (increased from 5s)
-
-              // Store interval ID for cleanup
-              (window as any).fallbackPollInterval = pollInterval;
-            }
-          }
-        };
-      } catch (error) {
-        console.error("Failed to create SSE connection:", error);
-        setIsConnected(false);
-      }
-    };
-
-    // Only connect if page is visible
+    // Start polling when page is visible
     if (isPageVisible) {
-      connectToSSE();
+      pollInterval = setInterval(pollBoardState, pollIntervalMs);
     }
 
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
-      if (eventSource) {
-        eventSource.close();
+      if (pollInterval) {
+        clearInterval(pollInterval);
       }
-      if (reconnectTimeout) {
-        clearTimeout(reconnectTimeout);
-      }
-      if ((window as any).fallbackPollInterval) {
-        clearInterval((window as any).fallbackPollInterval);
-        delete (window as any).fallbackPollInterval;
+      if (pollTimeout) {
+        clearTimeout(pollTimeout);
       }
     };
-  }, []);
+  }, [boardState.version]);
 
   // Load initial data
   useEffect(() => {
@@ -210,12 +105,32 @@ export default function ScrumBoard() {
 
   const loadBoardState = async (forceRefresh = false) => {
     try {
-      // Add cache-busting query parameter if forcing refresh
-      const url = forceRefresh 
-        ? `/api/tickets?t=${Date.now()}`
-        : "/api/tickets";
+      const currentVersion = boardState.version;
+      let url: string;
+      
+      if (forceRefresh) {
+        // Force refresh - bypass version check
+        url = `/api/tickets?t=${Date.now()}`;
+      } else if (currentVersion) {
+        // Include version for efficient polling
+        url = `/api/tickets?version=${currentVersion}`;
+      } else {
+        // Initial load - no version yet
+        url = "/api/tickets";
+      }
+
       const response = await fetch(url);
-      const data = await response.json();
+      
+      if (response.status === 304) {
+        // No changes - version matches, no update needed
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data: BoardState = await response.json();
       setBoardState(data);
     } catch (error) {
       console.error("Error loading board state:", error);
@@ -245,8 +160,10 @@ export default function ScrumBoard() {
         nextId: Math.max(prevState.nextId, newTicket.id + 1),
       }));
 
-      // Don't reload - SSE will send board-updated event with fresh state
-      // This eliminates unnecessary API calls
+      // Poll immediately after action to get fresh state with updated version
+      setTimeout(() => {
+        loadBoardState(true);
+      }, 500);
     } catch (error) {
       console.error("Error creating ticket:", error);
       // Only reload on error to ensure consistency
@@ -277,8 +194,10 @@ export default function ScrumBoard() {
         ),
       }));
 
-      // Don't reload - SSE will send board-updated event with fresh state
-      // This eliminates unnecessary API calls
+      // Poll immediately after action to get fresh state with updated version
+      setTimeout(() => {
+        loadBoardState(true);
+      }, 500);
     } catch (error) {
       console.error("Error updating ticket:", error);
       // Only reload on error to ensure consistency
@@ -303,8 +222,10 @@ export default function ScrumBoard() {
         tickets: prevState.tickets.filter((ticket) => ticket.id !== id),
       }));
 
-      // Don't reload - SSE will send board-updated event with fresh state
-      // This eliminates unnecessary API calls
+      // Poll immediately after action to get fresh state with updated version
+      setTimeout(() => {
+        loadBoardState(true);
+      }, 500);
     } catch (error) {
       console.error("Error deleting ticket:", error);
       // Only reload on error to ensure consistency
@@ -428,16 +349,6 @@ export default function ScrumBoard() {
             API Spec
           </button>
         </p>
-        <div className="mt-2 flex items-center justify-center gap-2 text-xs">
-          <div
-            className={`w-2 h-2 rounded-full ${
-              isConnected ? "bg-green-500" : "bg-red-500"
-            }`}
-          ></div>
-          <span className="text-gray-400">
-            {isConnected ? "Real-time connected" : "Connecting..."}
-          </span>
-        </div>
       </div>
     </div>
   );
