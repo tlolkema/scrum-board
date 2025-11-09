@@ -11,8 +11,8 @@ const connections = new Map<
     id: string;
     lastPing: number;
     isAlive: boolean;
-    pingTimeout: NodeJS.Timeout | null;
-    closeTimeout: NodeJS.Timeout | null;
+    pingTimeout: ReturnType<typeof setTimeout> | null;
+    closeTimeout: ReturnType<typeof setTimeout> | null;
     handleUpdate: (data: any) => void;
   }
 >();
@@ -42,7 +42,7 @@ const cleanup = (controller: ReadableStreamDefaultController) => {
   }
 };
 
-// Send ping to a specific connection
+// Send ping to a specific connection (reduced frequency to minimize compute)
 const sendPing = (controller: ReadableStreamDefaultController) => {
   const connection = connections.get(controller);
   if (!connection) return;
@@ -58,10 +58,10 @@ const sendPing = (controller: ReadableStreamDefaultController) => {
       connection.lastPing = now;
       connection.isAlive = true;
 
-      // Schedule next ping (every 20 seconds)
+      // Schedule next ping (every 25 seconds - only one ping per connection lifetime)
       connection.pingTimeout = setTimeout(() => {
         sendPing(controller);
-      }, 20000);
+      }, 25000);
     } else {
       cleanup(controller);
     }
@@ -106,15 +106,16 @@ export async function GET(request: NextRequest) {
         return;
       }
 
-      // Start ping cycle (first ping after 20 seconds)
+      // Start ping cycle (first ping after 25 seconds - only one ping per connection)
       const connection = connections.get(controller);
       if (connection) {
+        // Send a single ping at 25 seconds to keep connection alive
         connection.pingTimeout = setTimeout(() => {
           sendPing(controller);
-        }, 20000);
+        }, 25000);
 
-        // Close connection gracefully at 25 seconds to avoid Vercel timeout
-        // The client will automatically reconnect
+        // Close connection gracefully at 29 seconds to avoid Vercel timeout
+        // The client will reconnect with exponential backoff when tab is visible
         connection.closeTimeout = setTimeout(() => {
           console.log(`Closing SSE connection ${connectionId} before timeout`);
           try {
@@ -123,7 +124,7 @@ export async function GET(request: NextRequest) {
             // Connection may already be closed
           }
           cleanup(controller);
-        }, 25000); // Close at 25 seconds, before 30-second Vercel timeout
+        }, 29000); // Close at 29 seconds, before 30-second Vercel timeout
       }
 
       // Listen for board updates

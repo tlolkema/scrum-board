@@ -25,9 +25,36 @@ export default function ScrumBoard() {
     let reconnectTimeout: NodeJS.Timeout | null = null;
     let reconnectAttempts = 0;
     const maxReconnectAttempts = 10;
-    const baseReconnectDelay = 1000; // Start with 1 second
+    const baseReconnectDelay = 2000; // Start with 2 seconds (increased from 1s)
+    let isPageVisible = true;
+
+    // Pause connections when page is hidden to save compute
+    const handleVisibilityChange = () => {
+      isPageVisible = !document.hidden;
+      if (!isPageVisible && eventSource) {
+        // Page hidden - close connection to save resources
+        eventSource.close();
+        eventSource = null;
+        setIsConnected(false);
+        if (reconnectTimeout) {
+          clearTimeout(reconnectTimeout);
+          reconnectTimeout = null;
+        }
+      } else if (isPageVisible && !eventSource) {
+        // Page visible - reconnect
+        reconnectAttempts = 0;
+        connectToSSE();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     const connectToSSE = () => {
+      // Don't connect if page is hidden
+      if (!isPageVisible) {
+        return;
+      }
+
       // Clear any existing connection
       if (eventSource) {
         eventSource.close();
@@ -74,16 +101,17 @@ export default function ScrumBoard() {
             }
 
             if (data.type === "board-updated") {
-              // Use the board state from the event directly
+              // Use the board state from the event directly - no need for additional API call
               setBoardState(data.data);
             } else if (
               data.type === "ticket-created" ||
               data.type === "ticket-updated" ||
               data.type === "ticket-deleted"
             ) {
-              // Reload the entire board state to ensure consistency
-              // Use force refresh to bypass cache
-              loadBoardState(true);
+              // For individual ticket events, we still get board-updated, so we can rely on that
+              // But if we only get ticket events, we should reload (though this shouldn't happen)
+              // Actually, the server sends both ticket-* and board-updated, so we can ignore these
+              // and just wait for board-updated which already updates the state
             }
           } catch (error) {
             console.error("Error parsing SSE message:", error);
@@ -103,11 +131,16 @@ export default function ScrumBoard() {
             eventSource = null;
           }
 
-          // Implement exponential backoff
+          // Don't reconnect if page is hidden
+          if (!isPageVisible) {
+            return;
+          }
+
+          // Implement exponential backoff with longer delays to reduce compute
           if (reconnectAttempts < maxReconnectAttempts) {
             const delay = Math.min(
               baseReconnectDelay * Math.pow(2, reconnectAttempts),
-              30000 // Max 30 seconds
+              60000 // Max 60 seconds (increased from 30s)
             );
 
             // Only log reconnection attempts after a few failures
@@ -120,20 +153,28 @@ export default function ScrumBoard() {
             }
 
             reconnectTimeout = setTimeout(() => {
-              reconnectAttempts++;
-              connectToSSE();
+              if (isPageVisible) {
+                reconnectAttempts++;
+                connectToSSE();
+              }
             }, delay);
           } else {
             console.warn(
               "Max SSE reconnection attempts reached. Falling back to polling."
             );
-            // Fall back to polling if SSE fails completely
-            const pollInterval = setInterval(() => {
-              loadBoardState();
-            }, 5000); // Poll every 5 seconds as fallback
+            // Fall back to polling if SSE fails completely (only when visible)
+            if (isPageVisible) {
+              const pollInterval = setInterval(() => {
+                if (isPageVisible) {
+                  loadBoardState();
+                } else {
+                  clearInterval(pollInterval);
+                }
+              }, 10000); // Poll every 10 seconds as fallback (increased from 5s)
 
-            // Store interval ID for cleanup
-            (window as any).fallbackPollInterval = pollInterval;
+              // Store interval ID for cleanup
+              (window as any).fallbackPollInterval = pollInterval;
+            }
           }
         };
       } catch (error) {
@@ -142,9 +183,13 @@ export default function ScrumBoard() {
       }
     };
 
-    connectToSSE();
+    // Only connect if page is visible
+    if (isPageVisible) {
+      connectToSSE();
+    }
 
     return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
       if (eventSource) {
         eventSource.close();
       }
@@ -200,14 +245,11 @@ export default function ScrumBoard() {
         nextId: Math.max(prevState.nextId, newTicket.id + 1),
       }));
 
-      // Reload the full board state with cache-busting to ensure we get fresh data
-      // Small delay to allow server to save
-      setTimeout(() => {
-        loadBoardState(true);
-      }, 200);
+      // Don't reload - SSE will send board-updated event with fresh state
+      // This eliminates unnecessary API calls
     } catch (error) {
       console.error("Error creating ticket:", error);
-      // Reload state on error to ensure consistency (force refresh)
+      // Only reload on error to ensure consistency
       await loadBoardState(true);
       throw error;
     }
@@ -227,11 +269,19 @@ export default function ScrumBoard() {
         throw new Error("Failed to update ticket");
       }
 
-      // Immediately reload the board state to show the updated ticket (force refresh)
-      await loadBoardState(true);
+      // Optimistically update the UI
+      setBoardState((prevState) => ({
+        ...prevState,
+        tickets: prevState.tickets.map((ticket) =>
+          ticket.id === id ? { ...ticket, ...updates } : ticket
+        ),
+      }));
+
+      // Don't reload - SSE will send board-updated event with fresh state
+      // This eliminates unnecessary API calls
     } catch (error) {
       console.error("Error updating ticket:", error);
-      // Reload on error to ensure consistency
+      // Only reload on error to ensure consistency
       await loadBoardState(true);
       throw error;
     }
@@ -247,11 +297,17 @@ export default function ScrumBoard() {
         throw new Error("Failed to delete ticket");
       }
 
-      // Immediately reload the board state to show the updated ticket list (force refresh)
-      await loadBoardState(true);
+      // Optimistically update the UI
+      setBoardState((prevState) => ({
+        ...prevState,
+        tickets: prevState.tickets.filter((ticket) => ticket.id !== id),
+      }));
+
+      // Don't reload - SSE will send board-updated event with fresh state
+      // This eliminates unnecessary API calls
     } catch (error) {
       console.error("Error deleting ticket:", error);
-      // Reload on error to ensure consistency
+      // Only reload on error to ensure consistency
       await loadBoardState(true);
       throw error;
     }
