@@ -17,9 +17,12 @@ export default function ScrumBoard() {
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isApiSpecModalOpen, setIsApiSpecModalOpen] = useState(false);
-  const loadBoardState = useCallback(async () => {
+  const loadBoardState = useCallback(async (bypassCache = false) => {
     try {
-      const response = await fetch("/api/tickets");
+      const cacheOptions = bypassCache
+        ? { cache: "no-store" as RequestCache }
+        : {};
+      const response = await fetch("/api/tickets", cacheOptions);
       const data = await response.json();
       setBoardState(data);
     } catch (error) {
@@ -46,8 +49,17 @@ export default function ScrumBoard() {
         throw new Error("Failed to create ticket");
       }
 
-      // Immediately reload the board state to show the new ticket
-      await loadBoardState();
+      const newTicket = await response.json();
+      
+      // Immediately update state with the new ticket
+      setBoardState((prev) => ({
+        ...prev,
+        tickets: [...prev.tickets, newTicket],
+        nextId: newTicket.id + 1,
+      }));
+      
+      // Also fetch fresh data to ensure consistency (bypass cache)
+      await loadBoardState(true);
     } catch (error) {
       console.error("Error creating ticket:", error);
       throw error;
@@ -68,8 +80,18 @@ export default function ScrumBoard() {
         throw new Error("Failed to update ticket");
       }
 
-      // Immediately reload the board state to show the updated ticket
-      await loadBoardState();
+      const updatedTicket = await response.json();
+      
+      // Immediately update state with the updated ticket
+      setBoardState((prev) => ({
+        ...prev,
+        tickets: prev.tickets.map((ticket) =>
+          ticket.id === id ? updatedTicket : ticket
+        ),
+      }));
+      
+      // Also fetch fresh data to ensure consistency (bypass cache)
+      await loadBoardState(true);
     } catch (error) {
       console.error("Error updating ticket:", error);
       throw error;
@@ -86,8 +108,14 @@ export default function ScrumBoard() {
         throw new Error("Failed to delete ticket");
       }
 
-      // Immediately reload the board state to show the updated ticket list
-      await loadBoardState();
+      // Immediately update state by removing the deleted ticket
+      setBoardState((prev) => ({
+        ...prev,
+        tickets: prev.tickets.filter((ticket) => ticket.id !== id),
+      }));
+      
+      // Also fetch fresh data to ensure consistency (bypass cache)
+      await loadBoardState(true);
     } catch (error) {
       console.error("Error deleting ticket:", error);
       throw error;
