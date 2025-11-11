@@ -1,6 +1,6 @@
 # Simple Scrum Board
 
-A collaborative scrum board application built with Next.js, featuring real-time updates via WebSockets and persistent storage using Vercel Blob.
+A collaborative scrum board application built with Next.js, featuring automatic syncing via polling and persistent storage using Vercel Blob.
 
 > https://scrum-board-navy.vercel.app/
 
@@ -11,7 +11,7 @@ A collaborative scrum board application built with Next.js, featuring real-time 
 ## Features
 
 - **3 Column Layout**: To Do, In Progress, and Done columns
-- **Real-time Collaboration**: Multiple users can work simultaneously with WebSocket updates
+- **Automatic Syncing**: Board state syncs every 30 seconds, with immediate updates for your own changes
 - **Ticket Management**: Create, edit, and delete tickets with full details
 - **Persistent Storage**: All data is stored in Vercel Blob storage
 - **REST API**: Access tickets via `/api/tickets/` endpoints
@@ -55,16 +55,10 @@ npm run dev
 - `GET /api/tickets/[id]` - Get a specific ticket by ID
 - `PUT /api/tickets/[id]` - Update a ticket
 - `DELETE /api/tickets/[id]` - Delete a ticket
-- `GET /api/ws` - WebSocket endpoint for real-time updates
 
-## WebSocket Events
+## Real-time Updates
 
-The application uses WebSockets for real-time updates:
-
-- `ticket-created` - When a new ticket is created
-- `ticket-updated` - When a ticket is modified
-- `ticket-deleted` - When a ticket is removed
-- `board-updated` - When the entire board state changes
+The application uses polling to automatically sync board state every 30 seconds. When you create, update, or delete a ticket, the changes are reflected immediately without waiting for the next poll cycle.
 
 ## License
 

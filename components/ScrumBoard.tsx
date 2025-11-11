@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { DragDropContext, DropResult } from "react-beautiful-dnd";
 import { Ticket, BoardState } from "@/lib/types";
 import Column from "./Column";
@@ -19,157 +19,51 @@ export default function ScrumBoard() {
   const [isApiSpecModalOpen, setIsApiSpecModalOpen] = useState(false);
   const [isConnected, setIsConnected] = useState(true);
 
-  // Initialize Server-Sent Events for real-time updates
-  useEffect(() => {
-    let eventSource: EventSource | null = null;
-    let reconnectTimeout: NodeJS.Timeout | null = null;
-    let reconnectAttempts = 0;
-    const maxReconnectAttempts = 10;
-    const baseReconnectDelay = 1000; // Start with 1 second
-
-    const connectToSSE = () => {
-      // Clear any existing connection
-      if (eventSource) {
-        eventSource.close();
-        eventSource = null;
-      }
-
-      // Clear any pending reconnection
-      if (reconnectTimeout) {
-        clearTimeout(reconnectTimeout);
-        reconnectTimeout = null;
-      }
-
-      try {
-        // Only log connection attempts after a few failures
-        if (reconnectAttempts > 1) {
-          console.log(
-            `Attempting SSE connection (attempt ${reconnectAttempts + 1})`
-          );
-        }
-        eventSource = new EventSource("/api/ws");
-
-        eventSource.onopen = () => {
-          // Only log successful connections after failures
-          if (reconnectAttempts > 0) {
-            console.log("SSE connection restored");
-          }
-          setIsConnected(true);
-          reconnectAttempts = 0; // Reset attempts on successful connection
-        };
-
-        eventSource.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-
-            // Handle ping messages
-            if (data.type === "ping") {
-              // Silently handle ping messages
-              return;
-            }
-
-            if (data.type === "connected") {
-              // Silently handle connection confirmation
-              return;
-            }
-
-            if (data.type === "board-updated") {
-              setBoardState(data.data);
-            } else if (
-              data.type === "ticket-created" ||
-              data.type === "ticket-updated" ||
-              data.type === "ticket-deleted"
-            ) {
-              // Reload the entire board state to ensure consistency
-              loadBoardState();
-            }
-          } catch (error) {
-            console.error("Error parsing SSE message:", error);
-          }
-        };
-
-        eventSource.onerror = (error) => {
-          // Only log errors after a few attempts to reduce console spam
-          if (reconnectAttempts > 2) {
-            console.warn(`SSE connection error (attempt ${reconnectAttempts + 1}):`, error.type);
-          }
-          setIsConnected(false);
-
-          // Close the current connection
-          if (eventSource) {
-            eventSource.close();
-            eventSource = null;
-          }
-
-          // Implement exponential backoff
-          if (reconnectAttempts < maxReconnectAttempts) {
-            const delay = Math.min(
-              baseReconnectDelay * Math.pow(2, reconnectAttempts),
-              30000 // Max 30 seconds
-            );
-
-            // Only log reconnection attempts after a few failures
-            if (reconnectAttempts > 1) {
-              console.log(
-                `SSE reconnection scheduled in ${delay}ms (attempt ${
-                  reconnectAttempts + 1
-                }/${maxReconnectAttempts})`
-              );
-            }
-
-            reconnectTimeout = setTimeout(() => {
-              reconnectAttempts++;
-              connectToSSE();
-            }, delay);
-          } else {
-            console.warn(
-              "Max SSE reconnection attempts reached. Falling back to polling."
-            );
-            // Fall back to polling if SSE fails completely
-            const pollInterval = setInterval(() => {
-              loadBoardState();
-            }, 5000); // Poll every 5 seconds as fallback
-
-            // Store interval ID for cleanup
-            (window as any).fallbackPollInterval = pollInterval;
-          }
-        };
-      } catch (error) {
-        console.error("Failed to create SSE connection:", error);
-        setIsConnected(false);
-      }
-    };
-
-    connectToSSE();
-
-    return () => {
-      if (eventSource) {
-        eventSource.close();
-      }
-      if (reconnectTimeout) {
-        clearTimeout(reconnectTimeout);
-      }
-      if ((window as any).fallbackPollInterval) {
-        clearInterval((window as any).fallbackPollInterval);
-        delete (window as any).fallbackPollInterval;
-      }
-    };
-  }, []);
-
-  // Load initial data
-  useEffect(() => {
-    loadBoardState();
-  }, []);
-
-  const loadBoardState = async () => {
+  const loadBoardState = useCallback(async () => {
     try {
       const response = await fetch("/api/tickets");
       const data = await response.json();
       setBoardState(data);
     } catch (error) {
       console.error("Error loading board state:", error);
+      throw error; // Re-throw for polling error handling
     }
-  };
+  }, []);
+
+  // Load initial data
+  useEffect(() => {
+    loadBoardState();
+  }, [loadBoardState]);
+
+  // Polling for updates (more cost-effective than SSE on Vercel)
+  useEffect(() => {
+    const pollInterval = 30000; // Poll every 30 seconds
+    let consecutiveErrors = 0;
+    const maxErrors = 3;
+
+    const pollForUpdates = async () => {
+      try {
+        await loadBoardState();
+        setIsConnected(true);
+        consecutiveErrors = 0;
+      } catch (error) {
+        console.error("Error polling for updates:", error);
+        consecutiveErrors++;
+        
+        // Mark as disconnected after multiple consecutive errors
+        if (consecutiveErrors >= maxErrors) {
+          setIsConnected(false);
+        }
+      }
+    };
+
+    // Start polling
+    const intervalId = setInterval(pollForUpdates, pollInterval);
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [loadBoardState]);
 
   const handleCreateTicket = async (title: string, description: string) => {
     try {
@@ -355,7 +249,7 @@ export default function ScrumBoard() {
             }`}
           ></div>
           <span className="text-gray-400">
-            {isConnected ? "Real-time connected" : "Connecting..."}
+            {isConnected ? "Syncing every 30s" : "Connection error"}
           </span>
         </div>
       </div>

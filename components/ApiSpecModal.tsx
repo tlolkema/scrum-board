@@ -235,54 +235,21 @@ export default function ApiSpecModal({ isOpen, onClose }: ApiSpecModalProps) {
             </div>
           </div>
 
-          {/* WebSocket Events */}
+          {/* Real-time Updates */}
           <div className="mb-8">
             <h3 className="text-lg font-semibold text-gray-800 mb-3">
-              WebSocket Events
+              Real-time Updates
             </h3>
             <div className="space-y-4">
               <div className="bg-blue-50 p-4 rounded-lg">
-                <h4 className="font-semibold text-blue-800 mb-2">Connection</h4>
+                <h4 className="font-semibold text-blue-800 mb-2">Polling</h4>
+                <p className="text-sm text-gray-700 mb-2">
+                  The application uses polling to sync board state every 30 seconds.
+                  Changes made by the current user are reflected immediately without
+                  waiting for the next poll.
+                </p>
                 <div className="bg-gray-900 text-gray-100 p-3 rounded font-mono text-sm">
-                  <pre>ws://localhost:3000/api/ws</pre>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <div className="bg-gray-50 p-3 rounded">
-                  <h4 className="font-semibold text-gray-700 mb-1">
-                    ticket-created
-                  </h4>
-                  <div className="bg-gray-900 text-gray-100 p-2 rounded font-mono text-sm">
-                    <pre>{`{ "type": "ticket-created", "ticket": { ... } }`}</pre>
-                  </div>
-                </div>
-
-                <div className="bg-gray-50 p-3 rounded">
-                  <h4 className="font-semibold text-gray-700 mb-1">
-                    ticket-updated
-                  </h4>
-                  <div className="bg-gray-900 text-gray-100 p-2 rounded font-mono text-sm">
-                    <pre>{`{ "type": "ticket-updated", "ticket": { ... } }`}</pre>
-                  </div>
-                </div>
-
-                <div className="bg-gray-50 p-3 rounded">
-                  <h4 className="font-semibold text-gray-700 mb-1">
-                    ticket-deleted
-                  </h4>
-                  <div className="bg-gray-900 text-gray-100 p-2 rounded font-mono text-sm">
-                    <pre>{`{ "type": "ticket-deleted", "ticketId": 1 }`}</pre>
-                  </div>
-                </div>
-
-                <div className="bg-gray-50 p-3 rounded">
-                  <h4 className="font-semibold text-gray-700 mb-1">
-                    board-updated
-                  </h4>
-                  <div className="bg-gray-900 text-gray-100 p-2 rounded font-mono text-sm">
-                    <pre>{`{ "type": "board-updated", "tickets": [ ... ] }`}</pre>
-                  </div>
+                  <pre>GET /api/tickets (polled every 30s)</pre>
                 </div>
               </div>
             </div>
