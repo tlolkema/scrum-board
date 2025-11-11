@@ -7,7 +7,14 @@ const storage = VercelBlobStorage.getInstance();
 export async function GET() {
   try {
     const boardState = await storage.getBoardState();
-    return NextResponse.json(boardState);
+    
+    // Add caching headers to reduce function invocations
+    // Cache for 15 seconds (shorter than polling interval to ensure freshness)
+    return NextResponse.json(boardState, {
+      headers: {
+        "Cache-Control": "public, s-maxage=15, stale-while-revalidate=30",
+      },
+    });
   } catch (error) {
     console.error("Error fetching tickets:", error);
     return NextResponse.json(

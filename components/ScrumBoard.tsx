@@ -17,8 +17,6 @@ export default function ScrumBoard() {
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isApiSpecModalOpen, setIsApiSpecModalOpen] = useState(false);
-  const [isConnected, setIsConnected] = useState(true);
-
   const loadBoardState = useCallback(async () => {
     try {
       const response = await fetch("/api/tickets");
@@ -26,81 +24,12 @@ export default function ScrumBoard() {
       setBoardState(data);
     } catch (error) {
       console.error("Error loading board state:", error);
-      throw error; // Re-throw for polling error handling
     }
   }, []);
 
-  // Load initial data
+  // Load initial data on page load
   useEffect(() => {
     loadBoardState();
-  }, [loadBoardState]);
-
-  // Polling for updates (more cost-effective than SSE on Vercel)
-  // Pauses when tab is inactive to save resources
-  useEffect(() => {
-    const pollInterval = 30000; // Poll every 30 seconds
-    let consecutiveErrors = 0;
-    const maxErrors = 3;
-    let intervalId: NodeJS.Timeout | null = null;
-
-    const pollForUpdates = async () => {
-      // Don't poll if tab is hidden
-      if (document.hidden) {
-        return;
-      }
-
-      try {
-        await loadBoardState();
-        setIsConnected(true);
-        consecutiveErrors = 0;
-      } catch (error) {
-        console.error("Error polling for updates:", error);
-        consecutiveErrors++;
-        
-        // Mark as disconnected after multiple consecutive errors
-        if (consecutiveErrors >= maxErrors) {
-          setIsConnected(false);
-        }
-      }
-    };
-
-    const startPolling = () => {
-      if (intervalId) {
-        clearInterval(intervalId);
-      }
-      // Poll immediately when tab becomes visible
-      if (!document.hidden) {
-        pollForUpdates();
-      }
-      // Then continue polling at interval
-      intervalId = setInterval(pollForUpdates, pollInterval);
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        // Tab is hidden - pause polling
-        if (intervalId) {
-          clearInterval(intervalId);
-          intervalId = null;
-        }
-      } else {
-        // Tab is visible - resume polling
-        startPolling();
-      }
-    };
-
-    // Start polling initially
-    startPolling();
-
-    // Listen for visibility changes
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    return () => {
-      if (intervalId) {
-        clearInterval(intervalId);
-      }
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
   }, [loadBoardState]);
 
   const handleCreateTicket = async (title: string, description: string) => {
@@ -280,16 +209,6 @@ export default function ScrumBoard() {
             API Spec
           </button>
         </p>
-        <div className="mt-2 flex items-center justify-center gap-2 text-xs">
-          <div
-            className={`w-2 h-2 rounded-full ${
-              isConnected ? "bg-green-500" : "bg-red-500"
-            }`}
-          ></div>
-          <span className="text-gray-400">
-            {isConnected ? "Syncing every 30s" : "Connection error"}
-          </span>
-        </div>
       </div>
     </div>
   );
