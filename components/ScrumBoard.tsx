@@ -57,9 +57,6 @@ export default function ScrumBoard() {
         tickets: [...prev.tickets, newTicket],
         nextId: newTicket.id + 1,
       }));
-      
-      // Also fetch fresh data to ensure consistency (bypass cache)
-      await loadBoardState(true);
     } catch (error) {
       console.error("Error creating ticket:", error);
       throw error;
@@ -89,9 +86,6 @@ export default function ScrumBoard() {
           ticket.id === id ? updatedTicket : ticket
         ),
       }));
-      
-      // Also fetch fresh data to ensure consistency (bypass cache)
-      await loadBoardState(true);
     } catch (error) {
       console.error("Error updating ticket:", error);
       throw error;
@@ -113,9 +107,6 @@ export default function ScrumBoard() {
         ...prev,
         tickets: prev.tickets.filter((ticket) => ticket.id !== id),
       }));
-      
-      // Also fetch fresh data to ensure consistency (bypass cache)
-      await loadBoardState(true);
     } catch (error) {
       console.error("Error deleting ticket:", error);
       throw error;
