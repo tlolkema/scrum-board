@@ -1,3 +1,4 @@
+// Vercel Blob Storage implementation for scrum board state management
 import { put, del, list } from "@vercel/blob";
 import { BoardState, Ticket, WebSocketMessage } from "./types";
 import { eventEmitter } from "./eventEmitter";
