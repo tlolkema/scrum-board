@@ -36,12 +36,19 @@ export default function ScrumBoard() {
   }, [loadBoardState]);
 
   // Polling for updates (more cost-effective than SSE on Vercel)
+  // Pauses when tab is inactive to save resources
   useEffect(() => {
     const pollInterval = 30000; // Poll every 30 seconds
     let consecutiveErrors = 0;
     const maxErrors = 3;
+    let intervalId: NodeJS.Timeout | null = null;
 
     const pollForUpdates = async () => {
+      // Don't poll if tab is hidden
+      if (document.hidden) {
+        return;
+      }
+
       try {
         await loadBoardState();
         setIsConnected(true);
@@ -57,11 +64,42 @@ export default function ScrumBoard() {
       }
     };
 
-    // Start polling
-    const intervalId = setInterval(pollForUpdates, pollInterval);
+    const startPolling = () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+      // Poll immediately when tab becomes visible
+      if (!document.hidden) {
+        pollForUpdates();
+      }
+      // Then continue polling at interval
+      intervalId = setInterval(pollForUpdates, pollInterval);
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        // Tab is hidden - pause polling
+        if (intervalId) {
+          clearInterval(intervalId);
+          intervalId = null;
+        }
+      } else {
+        // Tab is visible - resume polling
+        startPolling();
+      }
+    };
+
+    // Start polling initially
+    startPolling();
+
+    // Listen for visibility changes
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
-      clearInterval(intervalId);
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [loadBoardState]);
 
